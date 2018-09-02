@@ -10,7 +10,7 @@ moved on to do other things.  I figured I'd pick the ball up and run with it.
 
 | Date     | Description  |
 | -------- | ------------ |
-| 09/02/2018 | Bug fix so this library works with HitBTC v2 login method. | 
+| 09/02/2018 | Published bug fix to PyPi so the `login` method works with HitBTC v2 login method. |
 
 The client supplies data both visually via console, as well as python objects via its `HitBTC.recv()`.
 It's important to note that this does not receive data from the API directly -
