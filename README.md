@@ -1,6 +1,16 @@
 # hitbtc
 HitBTC Websocket API 2.0 Client written in Python 3.
 
+Forked from [Crypto-toolbox/hitbtc](https://github.com/Crypto-toolbox/hitbtc).  At the time of this writing,
+Crypto-toolbox had not accepted a pull request into his repo in 7 months.  Seems like they might have
+moved on to do other things.  I figured I'd pick the ball up and run with it.  
+
+# Release History
+
+
+| Date     | Description  |
+| -------- | ------------ |
+| 09/02/2018 | Bug fix so this library works with HitBTC v2 login method. | 
 
 The client supplies data both visually via console, as well as python objects via its `HitBTC.recv()`.
 It's important to note that this does not receive data from the API directly -

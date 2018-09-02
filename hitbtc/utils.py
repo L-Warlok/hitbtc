@@ -92,4 +92,5 @@ response_types = {'getCurrency': resp_get_currency, 'getCurrencies': resp_get_cu
                   'subscribeReports': resp_subscribe_reports,
                   'newOrder': resp_place_order, 'cancelOrder': resp_cancel_order,
                   'cancelReplaceOrder': resp_cancel_replace_order,
-                  'login' : resp_login}
+                  'login': resp_login}
+
