@@ -1,13 +1,13 @@
 from setuptools import setup
 
-VERSION = '1.0.4'
+VERSION = '1.0.5'
 
-setup(name='hitbtc',
+setup(name='hitbtc-wss',
       version=VERSION,
       description='HitBTC Websocket API Client',
-      author='Nils Diefenbach',
-      author_email='23okrs20+gitlab@mykolab.com',
-      packages=['hitbtc'],
+      author='Mike Ellertson',
+      author_email='mdellertson@gmail.com',
+      packages=['hitbtc-wss'],
       classifiers=['Programming Language :: Python :: 3 :: Only'],
       install_requires=['websocket-client'],
       package_data={'': ['*.md', '*.rst']})
