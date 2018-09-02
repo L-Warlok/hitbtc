@@ -1,4 +1,4 @@
-# hitbtc_wss
+# hitbtc
 HitBTC Websocket API 2.0 Client written in Python 3.
 
 Forked from [Crypto-toolbox/hitbtc](https://github.com/Crypto-toolbox/hitbtc).  At the time of this writing,
@@ -29,15 +29,15 @@ For an in-depth description of the client and its methods, please see the docume
 
 # Installation
 
-Stable: `pip install hitbtc_wss`
-Release Candidate: `pip install --pre hitbtc_wss`
+Stable: `pip install hitbtc`
+Release Candidate: `pip install --pre hitbtc`
 
 # Example Usage
 
 ```python
 import time
 import queue
-from hitbtc_wss import HitBTC
+from hitbtc import HitBTC
 c = HitBTC()
 c.start()  # start the websocket connection
 time.sleep(2)  # Give the socket some time to connect
