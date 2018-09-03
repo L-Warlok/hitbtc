@@ -8,8 +8,8 @@ import hashlib
 from threading import Timer
 from collections import defaultdict
 
-from hitbtc.wss import WebSocketConnectorThread
-from hitbtc.utils import response_types
+from hitbtc_wss.wss import WebSocketConnectorThread
+from hitbtc_wss.utils import response_types
 
 log = logging.getLogger(__name__)
 

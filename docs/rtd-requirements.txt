@@ -1,1 +1,1 @@
-hitbtc
+hitbtc_wss

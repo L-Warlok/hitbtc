@@ -1,26 +1,26 @@
 HitBTC Websocket API Client Code Reference
 ==========================================
 
-.. automodule:: hitbtc
+.. automodule:: hitbtc_wss
    :members:
 
 The Client Object
 =================
 
-.. autoclass:: hitbtc.client.HitBTC
+.. autoclass:: hitbtc_wss.client.HitBTC
     :members:
 
 The Connector Object
 ====================
 
-.. autoclass:: hitbtc.connector.HitBTCConnector
+.. autoclass:: hitbtc_wss.connector.HitBTCConnector
     :members:
 
 The Websocket APP Object
 ========================
 
-.. autoclass:: hitbtc.wss.WebSocketConnector
+.. autoclass:: hitbtc_wss.wss.WebSocketConnector
     :members:
 
-.. autoclass:: hitbtc.wss.WebSocketConnectorThread
+.. autoclass:: hitbtc_wss.wss.WebSocketConnectorThread
     :members:

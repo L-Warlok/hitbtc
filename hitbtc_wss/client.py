@@ -5,7 +5,7 @@ import logging
 # Import Third-Party
 
 # Import Homebrew
-from hitbtc.connector import HitBTCConnector
+from hitbtc_wss.connector import HitBTCConnector
 
 # Init Logging Facilities
 log = logging.getLogger(__name__)
