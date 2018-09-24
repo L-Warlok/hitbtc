@@ -1,20 +1,23 @@
 """HitBTC Connector which pre-formats incoming data to the CTS standard."""
 
-import logging
-import time
 import json
 import hmac
 import hashlib
-from threading import Timer
 from collections import defaultdict
-
-from hitbtc_wss.wss import WebSocketConnectorThread
 from hitbtc_wss.utils import response_types
 
-log = logging.getLogger(__name__)
+from autobahn.twisted.websocket import WebSocketClientProtocol, WebSocketClientFactory, connectWS
+import json
+import sys
+import time
+
+from twisted.python import log
+from twisted.internet import reactor
 
 
-class HitBTCConnector(WebSocketConnectorThread):
+log.startLogging(sys.stdout)
+
+class HitBTCClient(WebSocketClientProtocol):
     """Class to pre-process HitBTC data, before putting it on the internal queue.
 
     Data on the queue is available as a 3-item-tuple by default.
@@ -34,15 +37,29 @@ class HitBTCConnector(WebSocketConnectorThread):
     """
 
     def __init__(self, url=None, raw=None, stdout_only=False, silent=False, **conn_ops):
-        """Initialize a HitBTCConnector instance."""
+        """Initialize a HitBTCClient instance."""
         url = url or 'wss://api.hitbtc.com/api/2/ws'
-        super(HitBTCConnector, self).__init__(url, **conn_ops)
+        factory = hitBTCClientFactory(url)
+        connectWS(factory)
         self.books = defaultdict(dict)
         self.requests = {}
         self.raw = raw
         self.logged_in = False
         self.silent = silent
         self.stdout_only = stdout_only
+
+        # Queue used to pass data up to Node
+        self.q = Queue(maxsize=q_maxsize or 100)
+
+        # Connection Handling Attributes
+        self._is_connected = False
+
+        # Set up history of sent commands for re-subscription
+        self.history = []
+
+    def run(self):
+        """Run the main method of thread."""
+        self.reactor.run()
 
     def put(self, item, block=False, timeout=None):
         """Place the given item on the internal q."""
@@ -54,42 +71,28 @@ class HitBTCConnector(WebSocketConnectorThread):
         if not self.silent:
             print(msg)
 
-    def _start_timers(self):
-        """Reset and start timers for API connection."""
-        self._stop_timers()
 
-        # Automatically reconnect if we didnt receive data
-        self.connection_timer = Timer(self.connection_timeout,
-                                      self._connection_timed_out)
-        self.connection_timer.start()
-
-    def _stop_timers(self):
-        """Stop connection timer."""
-        if self.connection_timer:
-            self.connection_timer.cancel()
-
-    def _on_message(self, ws, message):
+    def on_message(self, payload, isBinary):
         """Handle and pass received data to the appropriate handlers."""
 
-        self._stop_timer()
-
-        if not self.raw:
-            decoded_message = json.loads(message)
-            if 'jsonrpc' in decoded_message:
-                if 'result' in decoded_message or 'error' in decoded_message:
-                    self._handle_response(decoded_message)
-                else:
-                    try:
-                        method = decoded_message['method']
-                        symbol = decoded_message['params']['symbol']
-                        params = decoded_message['params']
-                    except Exception as e:
-                        self.log.exception(e)
-                        self.log.error(decoded_message)
-                        return
-                    self._handle_stream(method, symbol, params)
-        else:
-            self.put(message)
+        if isBinary is False:
+            if not self.raw:
+                decoded_message = json.loads(payload)
+                if 'jsonrpc' in decoded_message:
+                    if 'result' in decoded_message or 'error' in decoded_message:
+                        self._handle_response(decoded_message)
+                    else:
+                        try:
+                            method = decoded_message['method']
+                            symbol = decoded_message['params']['symbol']
+                            params = decoded_message['params']
+                        except Exception as e:
+                            self.log.exception(e)
+                            self.log.error(decoded_message)
+                            return
+                        self._handle_stream(method, symbol, params)
+            else:
+                self.put(payload)
 
     def _handle_response(self, response):
         """
@@ -203,7 +206,7 @@ class HitBTCConnector(WebSocketConnectorThread):
         if not self.raw:
             self.requests[payload['id']] = payload
         self.log.debug("Sending: %s", payload)
-        self.conn.send(json.dumps(payload))
+        self.sendMessage(json.dumps(payload).encode('utf-8'))
 
     def authenticate(self, key, secret, basic=False, custom_nonce=None):
         """Login to the HitBTC Websocket API using the given public and secret API keys."""
@@ -221,7 +224,19 @@ class HitBTCConnector(WebSocketConnectorThread):
         payload['pKey'] = key
         self.send('login', **payload)
 
+    def onOpen(self):
+        self._is_connected = True
+
+class hitBTCClientFactory(WebSocketClientFactory):
+    protocol = HitBTCClient
+
+    def clientConnectionLost(self, connector, reason):
+        print(reason)
+        self._is_connected = False
+        connector.connect()
 
 
-
-
+    def clientConnectionFailed(self, connector, reason):
+        print(reason)
+        self._is_connected = False
+        reactor.stop()

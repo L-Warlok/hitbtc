@@ -18,7 +18,6 @@ setup(name='hitbtc_wss',
       author_email='mdellertson@gmail.com',
       packages=['hitbtc_wss'],
       classifiers=['Programming Language :: Python :: 3 :: Only'],
-      install_requires=['websocket-client'],
       package_data={'': ['*.md', '*.rst']},
       url='https://github.com/mellertson/hitbtc')
 

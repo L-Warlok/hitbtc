@@ -4,8 +4,8 @@ import logging
 
 # Import Third-Party
 
-# Import Homebrew
-from hitbtc_wss.connector import HitBTCConnector
+
+from hitbtc_wss.connector import HitBTCClient
 
 # Init Logging Facilities
 log = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ class HitBTC:
         :param url: URL of the websocket API. Defaults to wss://api.hitbtc.com/api/2/ws
         :param conn_ops: Optional Kwargs to pass to the HitBTCConnector object
         """
-        self.conn = HitBTCConnector(url, raw, stdout_only, silent, **conn_ops)
+        self.conn = HitBTCClient(url, raw, stdout_only, silent, **conn_ops)
         self.key = key
         self.secret = secret
 
@@ -53,7 +53,7 @@ class HitBTC:
 
     def start(self):
         """Start the websocket connection."""
-        self.conn.start()
+        self.conn.run()
 
     def stop(self):
         """Stop the websocket connection."""
