@@ -4,9 +4,6 @@ import logging
 
 # Import Third-Party
 
-
-from hitbtc_wss.connector import HitBTCClient
-
 # Init Logging Facilities
 log = logging.getLogger(__name__)
 
@@ -25,43 +22,14 @@ class HitBTC:
 
     """
 
-    def __init__(self, key=None, secret=None, raw=None, stdout_only=False, silent=False, url=None,
-                 **conn_ops):
-        """
-        Initialize the instance.
-
-        :param key: API Public Key
-        :param secret: API Secret Key
-        :param raw: Bool, whether or not to unpack data or pass it as is
-        :param stdout_only: Bool, passing True will turn off placing data on self.conn.q
-        :param silent: Bool, passing True turns off print() arguments
-        :param url: URL of the websocket API. Defaults to wss://api.hitbtc.com/api/2/ws
-        :param conn_ops: Optional Kwargs to pass to the HitBTCConnector object
-        """
-        self.conn = HitBTCClient(url, raw, stdout_only, silent, **conn_ops)
-        self.key = key
-        self.secret = secret
-
-    def recv(self, block=True, timeout=None):
-        """Retrieve data from the connector queue."""
-        return self.conn.recv(block, timeout)
+    def __init__(self, connector=None):
+        self.conn = connector
 
     @property
     def credentials_given(self):
         """Assert if credentials are complete."""
         return self.key and self.secret
 
-    def start(self):
-        """Start the websocket connection."""
-        self.conn.run()
-
-    def stop(self):
-        """Stop the websocket connection."""
-        self.conn.stop()
-
-    def is_connected(self):
-        return self.conn._is_connected
-        
     def login(self, key=None, secret=None, basic=None, custom_nonce=None):
         """
         Login using the WSS API.

@@ -1,23 +1,18 @@
 """HitBTC Connector which pre-formats incoming data to the CTS standard."""
 
-import json
 import hmac
 import hashlib
 from collections import defaultdict
 from hitbtc_wss.utils import response_types
-
 from autobahn.twisted.websocket import WebSocketClientProtocol, WebSocketClientFactory, connectWS
 import json
-import sys
 import time
+from client import HitBTC
 
-from twisted.python import log
-from twisted.internet import reactor
+from queue import Queue
 
 
-log.startLogging(sys.stdout)
-
-class HitBTCClient(WebSocketClientProtocol):
+class HitBTCProtocol(WebSocketClientProtocol):
     """Class to pre-process HitBTC data, before putting it on the internal queue.
 
     Data on the queue is available as a 3-item-tuple by default.
@@ -31,68 +26,30 @@ class HitBTCClient(WebSocketClientProtocol):
     
     Stream items on the queue are formatted as:
         (method, symbol, params)
-
-    You can disable extraction and handling by passing 'raw=True' on instantiation. Note that this
-    will also turn off recording of sent requests, as well all logging activity.
     """
 
-    def __init__(self, url=None, raw=None, stdout_only=False, silent=False, **conn_ops):
-        """Initialize a HitBTCClient instance."""
-        url = url or 'wss://api.hitbtc.com/api/2/ws'
-        factory = hitBTCClientFactory(url)
-        connectWS(factory)
-        self.books = defaultdict(dict)
-        self.requests = {}
-        self.raw = raw
-        self.logged_in = False
-        self.silent = silent
-        self.stdout_only = stdout_only
+    def __init__(self, subs=None):
+        self.subs = subs
+        super().__init__()
 
-        # Queue used to pass data up to Node
-        self.q = Queue(maxsize=q_maxsize or 100)
-
-        # Connection Handling Attributes
-        self._is_connected = False
-
-        # Set up history of sent commands for re-subscription
-        self.history = []
-
-    def run(self):
-        """Run the main method of thread."""
-        self.reactor.run()
-
-    def put(self, item, block=False, timeout=None):
-        """Place the given item on the internal q."""
-        if not self.stdout_only:
-            self.q.put(item, block, timeout)
-
-    def echo(self, msg):
-        """Print message to stdout if ``silent`` isn't True."""
-        if not self.silent:
-            print(msg)
-
-
-    def on_message(self, payload, isBinary):
+    def onMessage(self, payload, isBinary):
         """Handle and pass received data to the appropriate handlers."""
-
         if isBinary is False:
-            if not self.raw:
-                decoded_message = json.loads(payload)
-                if 'jsonrpc' in decoded_message:
-                    if 'result' in decoded_message or 'error' in decoded_message:
-                        self._handle_response(decoded_message)
-                    else:
-                        try:
-                            method = decoded_message['method']
-                            symbol = decoded_message['params']['symbol']
-                            params = decoded_message['params']
-                        except Exception as e:
-                            self.log.exception(e)
-                            self.log.error(decoded_message)
-                            return
-                        self._handle_stream(method, symbol, params)
-            else:
-                self.put(payload)
+            decoded_message = json.loads(payload)
+            print(decoded_message)
+            if 'jsonrpc' in decoded_message:
+                if 'result' in decoded_message or 'error' in decoded_message:
+                    self._handle_response(decoded_message)
+                else:
+                    try:
+                        method = decoded_message['method']
+                        symbol = decoded_message['params']['symbol']
+                        params = decoded_message['params']
+                    except Exception as e:
+                        self.log.exception(e)
+                        self.log.error(decoded_message)
+                        return
+                    self._handle_stream(method, symbol, params)
 
     def _handle_response(self, response):
         """
@@ -187,9 +144,13 @@ class HitBTCClient(WebSocketClientProtocol):
         self.echo(err_message)
         self.put(('Response', 'Failure', (request, response)))
 
-    def _handle_stream(self, method, symbol, params):
-        """Handle streamed data."""
-        self.put((method, symbol, params))
+    def onOpen(self):
+        print("open")
+        self.client = HitBTC(connector=self)
+        for i in self.subs:
+            for j in self.subs[i]['params']:
+                for k in self.subs[i]['params'][j]:
+                    getattr(self.client, i)(**{j:k})
 
     def send(self, method, custom_id=None, **params):
         """
@@ -199,12 +160,8 @@ class HitBTCClient(WebSocketClientProtocol):
         :param custom_id: custom ID to identify response messages relating to this request
         :param kwargs: payload parameters as key=value pairs
         """
-        if not self._is_connected:
-            self.echo("Cannot Send payload - Connection not established!")
-            return
+
         payload = {'method': method, 'params': params, 'id': custom_id or int(10000 * time.time())}
-        if not self.raw:
-            self.requests[payload['id']] = payload
         self.log.debug("Sending: %s", payload)
         self.sendMessage(json.dumps(payload).encode('utf-8'))
 
@@ -224,19 +181,46 @@ class HitBTCClient(WebSocketClientProtocol):
         payload['pKey'] = key
         self.send('login', **payload)
 
-    def onOpen(self):
-        self._is_connected = True
 
-class hitBTCClientFactory(WebSocketClientFactory):
-    protocol = HitBTCClient
+class hitBTCProtocolFactory(WebSocketClientFactory):
+
+    def buildProtocol(self, addr):
+        p = self.protocol(self.subs)
+        p.factory = self
+        return p
+
+    def __init__(self, url=None, key=None, secret=None, q_maxsize=None, symbols=None, books=[], subs=None):
+        import sys
+
+        from twisted.python import log
+        log.startLogging(sys.stdout)
+
+        self.protocol = HitBTCProtocol
+
+        self.subs = subs
+        self.url = url or 'wss://api.hitbtc.com/api/2/ws'
+        super().__init__(self.url)
+        self.books = books or defaultdict(dict)
+        self.logged_in = False
+
+        self.key = key
+        self.secret = secret
+
+        self.q = Queue(maxsize=q_maxsize or 100)
 
     def clientConnectionLost(self, connector, reason):
         print(reason)
-        self._is_connected = False
         connector.connect()
-
 
     def clientConnectionFailed(self, connector, reason):
         print(reason)
-        self._is_connected = False
         reactor.stop()
+
+
+if __name__ == '__main__':
+    from twisted.internet import reactor
+
+    subscriptions = {'subscribe_ticker': {'params': {'symbol': ['ETHDAI', 'ETHBTC']}}, 'subscribe_book': {'params': {'symbol': ['ETHDAI', 'ETHBTC']}}}
+    factory = hitBTCProtocolFactory(url='wss://api.hitbtc.com/api/2/ws', subs=subscriptions)
+    connectWS(factory)
+    reactor.run()
