@@ -178,6 +178,7 @@ class HitBTC:
 
     def track_tickers(self, symbol):
         self.tracked_tickers[symbol] = {'high': 0, 'low': 999999}
+        self.tracked_tickers[symbol]['open'] = {'price': 1}
 
     def ticker_callback(self, method, symbol, params):
         test = float(params['ask'])
@@ -185,6 +186,17 @@ class HitBTC:
             self.tracked_tickers[symbol]['high'] = float(params['ask'])
         if float(params['ask']) < self.tracked_tickers[symbol]['low']:
             self.tracked_tickers[symbol]['low'] = float(params['ask'])
+        self.tracked_tickers[symbol]['ask'] = float(params['ask'])
+        self.tracked_tickers[symbol]['bid'] = float(params['bid'])
+
+        ask = self.tracked_tickers[symbol]['ask']
+        open = self.tracked_tickers[symbol]['open']['price']
+        if (open - ask)/open * 100 > 2:
+            print("Buy")
+            self.conn.log.info("Buy at {ask} less than {open}", ask=ask, open=open)
+        elif (open - ask)/open * 100 < -2:
+            self.conn.log.info("Sell at {ask} less than {open}", ask=ask, open=open)
+            print("Sell")
 
         print("Symbol: {0}, Ask {1},  High: {2}, Low: {3}".format(symbol, float(params["ask"]), self.tracked_tickers[symbol]['high'], self.tracked_tickers[symbol]['low']))
 
@@ -192,4 +204,6 @@ class HitBTC:
         return
 
     def candles_callback(self, method, symbol, params):
-        print("Open: {0}, High: {1}, Low: {2}, Time: {3}".format(params['data'][0]['open'], params['data'][0]['max'], params['data'][0]['min'], params['data'][0]['timestamp']))
+        self.tracked_tickers[symbol]['open']['time'] = params['data'][0]['timestamp']
+        self.tracked_tickers[symbol]['open']['price'] = float(params['data'][0]['open'])
+        print("Open: {0}, High: {1}, Low: {2}, Time: {3}".format(params['data'][-1]['open'], params['data'][0]['max'], params['data'][0]['min'], params['data'][0]['timestamp']))

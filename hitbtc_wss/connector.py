@@ -218,7 +218,7 @@ class hitBTCProtocolFactory(WebSocketClientFactory):
 if __name__ == '__main__':
     from twisted.internet import reactor
 
-    subscriptions = {'subscribe_ticker': {0: {'symbol': 'ETHDAI'}, 1: {'symbol': 'BTCDAI'}}, 'subscribe_candles': {0: {'symbol': 'ETHDAI', 'period': 'M30'}}}
+    subscriptions = {'subscribe_ticker': {0: {'symbol': 'ETHDAI'}}, 'subscribe_candles': {0: {'symbol': 'ETHDAI', 'period': 'M30'}}}
     factory = hitBTCProtocolFactory(url='wss://api.hitbtc.com/api/2/ws', subs=subscriptions)
     connectWS(factory)
     reactor.run()
