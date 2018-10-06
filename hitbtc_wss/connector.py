@@ -3,40 +3,33 @@
 import hmac
 import hashlib
 from collections import defaultdict
-from hitbtc_wss.utils import response_types
+from utils import response_types
 from autobahn.twisted.websocket import WebSocketClientProtocol, WebSocketClientFactory, connectWS
 import json
 import time
 from client import HitBTC
 
-from queue import Queue
-
 
 class HitBTCProtocol(WebSocketClientProtocol):
-    """Class to pre-process HitBTC data, before putting it on the internal queue.
+    """Class to process HitBTC data.
 
-    Data on the queue is available as a 3-item-tuple by default.
-    
-    Response items on the queue are formatted as:
-        ('Response', 'Success' or 'Failure', (request, response))
-    
-    'Success' indicates a successful response and 'Failure' a failed one. 
-    ``request`` is the original payload sent by the
-    client and ``response`` the related response object from the server.
-    
-    Stream items on the queue are formatted as:
-        (method, symbol, params)
     """
 
-    def __init__(self, subs=None):
+    def __init__(self, subs=None, silent=False):
         self.subs = subs
+        self.requests = {}
+        self.silent = silent
+        import io
+        from twisted.logger import textFileLogObserver, Logger
+
+        self.log = Logger(observer=textFileLogObserver(io.open("log.txt", "a")))
+        self.debug_count = 0
         super().__init__()
 
     def onMessage(self, payload, isBinary):
         """Handle and pass received data to the appropriate handlers."""
         if isBinary is False:
             decoded_message = json.loads(payload)
-            print(decoded_message)
             if 'jsonrpc' in decoded_message:
                 if 'result' in decoded_message or 'error' in decoded_message:
                     self._handle_response(decoded_message)
@@ -46,10 +39,15 @@ class HitBTCProtocol(WebSocketClientProtocol):
                         symbol = decoded_message['params']['symbol']
                         params = decoded_message['params']
                     except Exception as e:
-                        self.log.exception(e)
-                        self.log.error(decoded_message)
+                        self.log.debug(e)
+                        self.log.debug(decoded_message)
                         return
                     self._handle_stream(method, symbol, params)
+
+    def echo(self, msg):
+        """Print message to stdout if ``silent`` isn't True."""
+        if not self.silent:
+            print(msg)
 
     def _handle_response(self, response):
         """
@@ -61,15 +59,15 @@ class HitBTCProtocol(WebSocketClientProtocol):
         try:
             i_d = response['id']
         except KeyError as e:
-            self.log.exception(e)
-            self.log.error("An expected Response ID was not found in %s", response)
+            self.log.debug(e)
+            self.log.debug("An expected Response ID was not found in %s", response)
             raise
 
         try:
             request = self.requests.pop(i_d)
         except KeyError as e:
-            log.exception(e)
-            log.error("Could not find Request relating to Response object %s", response)
+            self.log.debug(e)
+            self.log.debug("Could not find Request relating to Response object %s", response)
             raise
 
         if 'result' in response:
@@ -83,18 +81,15 @@ class HitBTCProtocol(WebSocketClientProtocol):
 
         Logs messages and prints them to screen.
 
-        Finally, we'll put the response and its corresponding request on the internal queue for
-        retrieval by the client.
         """
         method = request['method']
 
         try:
             msg = response_types[method]
         except KeyError as e:
-            log.exception(e)
-            log.error("Response's method %s is unknown to the client! %s", method, response)
+            self.log.debug(e)
+            self.log.debug("Response's method %s is unknown to the client! %s", method, response)
             return
-        print(request)
         if method.startswith('subscribe'):
             if 'symbol' in request['params']:
                 formatted_msg = msg.format(symbol=request['params']['symbol'])
@@ -125,8 +120,7 @@ class HitBTCProtocol(WebSocketClientProtocol):
                     text += msg.format(response['result'])
                 self.log.info(text)
                 self.echo(text)
-        self.log.debug("Request: %r, Response: %r", request, response)
-        self.put(('Response', 'Success', (request, response)))
+        self.log.debug("Request: {request}, Response: {response}", request=request, response=response)
 
     def _handle_error(self, request, response):
         """
@@ -135,22 +129,31 @@ class HitBTCProtocol(WebSocketClientProtocol):
         Logs the corresponding requests and the error code and error messages, and prints them to
         the screen.
 
-        Finally, we'll put the response and its corresponding request on the internal queue for
-        retrieval by the client.
         """
         err_message = "{code} - {message} - {description}!".format(**response['error'])
         err_message += " Related Request: %r" % request
-        self.log.error(err_message)
+        self.log.debug(err_message)
         self.echo(err_message)
-        self.put(('Response', 'Failure', (request, response)))
+        self.client.error_callback(request, response)
+
+    def _handle_stream(self, method, symbol, params):
+        """Handle streamed data."""
+
+        if method.startswith("snapshot"):
+            method = method[8:].lower()
+        elif method.startswith("update"):
+            method = method[6:].lower()
+
+        getattr(self.client, method + "_callback")(method, symbol, params)
 
     def onOpen(self):
         print("open")
         self.client = HitBTC(connector=self)
         for i in self.subs:
-            for j in self.subs[i]['params']:
-                for k in self.subs[i]['params'][j]:
-                    getattr(self.client, i)(**{j:k})
+            for j in self.subs[i]:
+                getattr(self.client, i)(**(self.subs[i][j]))
+                if i == "subscribe_ticker":
+                    self.client.track_tickers(self.subs[i][j]['symbol'])
 
     def send(self, method, custom_id=None, **params):
         """
@@ -162,7 +165,8 @@ class HitBTCProtocol(WebSocketClientProtocol):
         """
 
         payload = {'method': method, 'params': params, 'id': custom_id or int(10000 * time.time())}
-        self.log.debug("Sending: %s", payload)
+        self.requests[payload['id']] = payload
+        self.log.debug("Sending: {load}", load=payload)
         self.sendMessage(json.dumps(payload).encode('utf-8'))
 
     def authenticate(self, key, secret, basic=False, custom_nonce=None):
@@ -189,11 +193,7 @@ class hitBTCProtocolFactory(WebSocketClientFactory):
         p.factory = self
         return p
 
-    def __init__(self, url=None, key=None, secret=None, q_maxsize=None, symbols=None, books=[], subs=None):
-        import sys
-
-        from twisted.python import log
-        log.startLogging(sys.stdout)
+    def __init__(self, url=None, key=None, secret=None, q_maxsize=None, books=[], subs=None):
 
         self.protocol = HitBTCProtocol
 
@@ -205,8 +205,6 @@ class hitBTCProtocolFactory(WebSocketClientFactory):
 
         self.key = key
         self.secret = secret
-
-        self.q = Queue(maxsize=q_maxsize or 100)
 
     def clientConnectionLost(self, connector, reason):
         print(reason)
@@ -220,7 +218,7 @@ class hitBTCProtocolFactory(WebSocketClientFactory):
 if __name__ == '__main__':
     from twisted.internet import reactor
 
-    subscriptions = {'subscribe_ticker': {'params': {'symbol': ['ETHDAI', 'ETHBTC']}}, 'subscribe_book': {'params': {'symbol': ['ETHDAI', 'ETHBTC']}}}
+    subscriptions = {'subscribe_ticker': {0: {'symbol': 'ETHDAI'}, 1: {'symbol': 'BTCDAI'}}, 'subscribe_candles': {0: {'symbol': 'ETHDAI', 'period': 'M30'}}}
     factory = hitBTCProtocolFactory(url='wss://api.hitbtc.com/api/2/ws', subs=subscriptions)
     connectWS(factory)
     reactor.run()

@@ -1,12 +1,7 @@
 """Client Object to connect to API and relevant Exceptions."""
-# Import Built-Ins
-import logging
 
-# Import Third-Party
-
-# Init Logging Facilities
-log = logging.getLogger(__name__)
-
+import datetime
+import time
 
 class CredentialsError(ValueError):
     pass
@@ -24,6 +19,8 @@ class HitBTC:
 
     def __init__(self, connector=None):
         self.conn = connector
+        self.highest = 0
+        self.tracked_tickers = {}
 
     @property
     def credentials_given(self):
@@ -175,3 +172,24 @@ class HitBTC:
             https://api.hitbtc.com/?python#cancel-replace-orders
         """
         self.conn.send('cancelReplaceOrder', custom_id=custom_id, **params)
+
+    def error_callback(self, request, response):
+        return
+
+    def track_tickers(self, symbol):
+        self.tracked_tickers[symbol] = {'high': 0, 'low': 999999}
+
+    def ticker_callback(self, method, symbol, params):
+        test = float(params['ask'])
+        if float(params['ask']) > self.tracked_tickers[symbol]['high']:
+            self.tracked_tickers[symbol]['high'] = float(params['ask'])
+        if float(params['ask']) < self.tracked_tickers[symbol]['low']:
+            self.tracked_tickers[symbol]['low'] = float(params['ask'])
+
+        print("Symbol: {0}, Ask {1},  High: {2}, Low: {3}".format(symbol, float(params["ask"]), self.tracked_tickers[symbol]['high'], self.tracked_tickers[symbol]['low']))
+
+    def orderbook_callback(self, method, symbol, params):
+        return
+
+    def candles_callback(self, method, symbol, params):
+        print("Open: {0}, High: {1}, Low: {2}, Time: {3}".format(params['data'][0]['open'], params['data'][0]['max'], params['data'][0]['min'], params['data'][0]['timestamp']))
