@@ -1,7 +1,8 @@
 """Client Object to connect to API and relevant Exceptions."""
 
-import datetime
-import time
+from hitbtc_wss.connector import hitBTCProtocolFactory
+from autobahn.twisted.websocket import connectWS
+from twisted.internet import reactor
 
 class CredentialsError(ValueError):
     pass
@@ -17,10 +18,40 @@ class HitBTC:
 
     """
 
-    def __init__(self, connector=None):
-        self.conn = connector
-        self.highest = 0
-        self.tracked_tickers = {}
+    def __init__(self, key=None, secret=None, raw=None, stdout_only=False, silent=False, url=None,
+                 **conn_ops):
+        """
+        Initialize the instance.
+        :param key: API Public Key
+        :param secret: API Secret Key
+        :param raw: Bool, whether or not to unpack data or pass it as is
+        :param stdout_only: Bool, passing True will turn off placing data on self.conn.q
+        :param silent: Bool, passing True turns off print() arguments
+        :param url: URL of the websocket API. Defaults to wss://api.hitbtc.com/api/2/ws
+        :param conn_ops: Optional Kwargs to pass to the HitBTCConnector object
+        """
+        self.conn = hitBTCProtocolFactory(url, raw, stdout_only, silent, **conn_ops)
+        self.key = key
+        self.secret = secret
+
+
+
+
+    def recv(self, block=True, timeout=None):
+        """Retrieve data from the connector queue."""
+        return self.conn.recv(block, timeout)
+
+    def start(self):
+        """Start the websocket connection."""
+        connectWS(self.conn)
+        reactor.run()
+
+
+    def stop(self):
+        """Stop the websocket connection."""
+
+        self.conn.stop()
+
 
     @property
     def credentials_given(self):
@@ -173,37 +204,10 @@ class HitBTC:
         """
         self.conn.send('cancelReplaceOrder', custom_id=custom_id, **params)
 
-    def error_callback(self, request, response):
-        return
+if __name__ == '__main__':
+    client = HitBTC()
+    client.start()
+    client.request_currencies(params='ETH')
 
-    def track_tickers(self, symbol):
-        self.tracked_tickers[symbol] = {'high': 0, 'low': 999999}
-        self.tracked_tickers[symbol]['open'] = {'price': 1}
 
-    def ticker_callback(self, method, symbol, params):
-        test = float(params['ask'])
-        if float(params['ask']) > self.tracked_tickers[symbol]['high']:
-            self.tracked_tickers[symbol]['high'] = float(params['ask'])
-        if float(params['ask']) < self.tracked_tickers[symbol]['low']:
-            self.tracked_tickers[symbol]['low'] = float(params['ask'])
-        self.tracked_tickers[symbol]['ask'] = float(params['ask'])
-        self.tracked_tickers[symbol]['bid'] = float(params['bid'])
 
-        ask = self.tracked_tickers[symbol]['ask']
-        open = self.tracked_tickers[symbol]['open']['price']
-        if (open - ask)/open * 100 > 2:
-            print("Buy")
-            self.conn.log.info("Buy at {ask} less than {open}", ask=ask, open=open)
-        elif (open - ask)/open * 100 < -2:
-            self.conn.log.info("Sell at {ask} less than {open}", ask=ask, open=open)
-            print("Sell")
-
-        print("Symbol: {0}, Ask {1},  High: {2}, Low: {3}".format(symbol, float(params["ask"]), self.tracked_tickers[symbol]['high'], self.tracked_tickers[symbol]['low']))
-
-    def orderbook_callback(self, method, symbol, params):
-        return
-
-    def candles_callback(self, method, symbol, params):
-        self.tracked_tickers[symbol]['open']['time'] = params['data'][0]['timestamp']
-        self.tracked_tickers[symbol]['open']['price'] = float(params['data'][0]['open'])
-        print("Open: {0}, High: {1}, Low: {2}, Time: {3}".format(params['data'][-1]['open'], params['data'][0]['max'], params['data'][0]['min'], params['data'][0]['timestamp']))

@@ -3,11 +3,13 @@
 import hmac
 import hashlib
 from collections import defaultdict
-from utils import response_types
-from autobahn.twisted.websocket import WebSocketClientProtocol, WebSocketClientFactory, connectWS
+from hitbtc_wss.utils import response_types
+from autobahn.twisted.websocket import WebSocketClientProtocol, WebSocketClientFactory
 import json
 import time
-from client import HitBTC
+from queue import Queue
+import io
+from twisted.logger import textFileLogObserver, Logger
 
 
 class HitBTCProtocol(WebSocketClientProtocol):
@@ -15,16 +17,12 @@ class HitBTCProtocol(WebSocketClientProtocol):
 
     """
 
-    def __init__(self, subs=None, silent=False):
-        self.subs = subs
-        self.requests = {}
-        self.silent = silent
-        import io
-        from twisted.logger import textFileLogObserver, Logger
-
+    def __init__(self):
+        """Initialize a HitBTCProtocol instance."""
         self.log = Logger(observer=textFileLogObserver(io.open("log.txt", "a")))
         self.debug_count = 0
-        super().__init__()
+
+        super(HitBTCProtocol, self).__init__()
 
     def onMessage(self, payload, isBinary):
         """Handle and pass received data to the appropriate handlers."""
@@ -104,11 +102,13 @@ class HitBTCProtocol(WebSocketClientProtocol):
                 # getSymbols, getTrades, getTradingBalance, getOrders
                 for item in response['result']:
                     # Don't print zero balances
-                    if method is not 'getTradingBalance' or (float(item['available']) > 0 or float(item['reserved']) > 0):
+                    if method is not 'getTradingBalance' or (
+                            float(item['available']) > 0 or float(item['reserved']) > 0):
                         try:
                             text += msg.format(**item)
-                        except KeyError as e :
-                            print("Formatter for method {} failed on item {} with KeyError {}... item keys {}".format(method, item, e, item.keys()))
+                        except KeyError as e:
+                            print("Formatter for method {} failed on item {} with KeyError {}... item keys {}".format(
+                                method, item, e, item.keys()))
                 self.log.info(text)
                 self.echo(text)
             else:
@@ -121,6 +121,7 @@ class HitBTCProtocol(WebSocketClientProtocol):
                 self.log.info(text)
                 self.echo(text)
         self.log.debug("Request: {request}, Response: {response}", request=request, response=response)
+        self.q.put(('Response', 'Success', (request, response)), self.timeout)
 
     def _handle_error(self, request, response):
         """
@@ -134,7 +135,7 @@ class HitBTCProtocol(WebSocketClientProtocol):
         err_message += " Related Request: %r" % request
         self.log.debug(err_message)
         self.echo(err_message)
-        self.client.error_callback(request, response)
+        self.put(('Response', 'Failure', (request, response)),self.timeout)
 
     def _handle_stream(self, method, symbol, params):
         """Handle streamed data."""
@@ -144,16 +145,11 @@ class HitBTCProtocol(WebSocketClientProtocol):
         elif method.startswith("update"):
             method = method[6:].lower()
 
-        getattr(self.client, method + "_callback")(method, symbol, params)
+        self.put((method, symbol, params), self.timeout)
 
     def onOpen(self):
         print("open")
-        self.client = HitBTC(connector=self)
-        for i in self.subs:
-            for j in self.subs[i]:
-                getattr(self.client, i)(**(self.subs[i][j]))
-                if i == "subscribe_ticker":
-                    self.client.track_tickers(self.subs[i][j]['symbol'])
+
 
     def send(self, method, custom_id=None, **params):
         """
@@ -188,23 +184,19 @@ class HitBTCProtocol(WebSocketClientProtocol):
 
 class hitBTCProtocolFactory(WebSocketClientFactory):
 
-    def buildProtocol(self, addr):
-        p = self.protocol(self.subs)
-        p.factory = self
-        return p
-
-    def __init__(self, url=None, key=None, secret=None, q_maxsize=None, books=[], subs=None):
+    def __init__(self, url=None, raw=None, stdout_only=False, silent=False, timeout=None, q_maxsize=None, **conn_ops):
 
         self.protocol = HitBTCProtocol
 
-        self.subs = subs
-        self.url = url or 'wss://api.hitbtc.com/api/2/ws'
-        super().__init__(self.url)
-        self.books = books or defaultdict(dict)
-        self.logged_in = False
-
-        self.key = key
-        self.secret = secret
+        url = url or 'wss://api.hitbtc.com/api/2/ws'
+        super(hitBTCProtocolFactory, self).__init__(url, **conn_ops)
+        self.books = defaultdict(dict)
+        self.protocol.requests = {}
+        self.protocol.raw = raw
+        self.protocol.logged_in = False
+        self.protocol.silent = silent
+        self.protocol.timeout = timeout or None
+        self.protocol.q = Queue(q_maxsize or 100)
 
     def clientConnectionLost(self, connector, reason):
         print(reason)
@@ -215,11 +207,3 @@ class hitBTCProtocolFactory(WebSocketClientFactory):
         reactor.stop()
 
 
-if __name__ == '__main__':
-    from twisted.internet import reactor
-
-    subscriptions = {'subscribe_ticker': {0: {'symbol': 'ETHDAI'}},
-                     'subscribe_candles': {0: {'symbol': 'ETHDAI', 'period': 'M30'}}}
-    factory = hitBTCProtocolFactory(url='wss://api.hitbtc.com/api/2/ws', subs=subscriptions)
-    connectWS(factory)
-    reactor.run()
