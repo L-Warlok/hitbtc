@@ -148,6 +148,7 @@ class HitBTCProtocol(WebSocketClientProtocol):
         self.put((method, symbol, params), self.timeout)
 
     def onOpen(self):
+
         print("open")
 
 
