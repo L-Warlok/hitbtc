@@ -103,3 +103,4 @@ ENV/
 # PyCharm project settings (by JetBrains)
 .idea/
 
+app/

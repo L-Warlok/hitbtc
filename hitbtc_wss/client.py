@@ -86,6 +86,7 @@ class HitBTC:
         Offical Endpoint Documentation:
             https://api.hitbtc.com/?python#get-symbols
         """
+
         self.conn.send('getSymbols', custom_id, **params)
 
     def request_trades(self, custom_id=None, **params):
